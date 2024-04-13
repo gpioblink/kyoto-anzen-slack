@@ -70,7 +70,7 @@ class Main {
     const replyToken = eventData.replyToken;
     const msgType = eventData.message.type;
 
-    const kyotoTeacher = new Teacher(KYOTO_PROMPT, "まいこはん", AVATOR_URL_KYOTO);
+    const kyotoTeacher = (Math.random()>0.5) ? new Teacher(KYOTO_PROMPT, "まいこはん", AVATOR_URL_KYOTO) : new Teacher(PRINCESS_PROMPT, "プリンセス", AVATOR_URL_PRINCESS);
     const lineBot = new LINEController(replyToken);
 
     if (msgType !== 'text') return;
