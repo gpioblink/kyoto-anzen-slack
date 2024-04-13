@@ -8,6 +8,10 @@ const OPENAI_COMPLETIONS_URL = PropertiesService.getScriptProperties().getProper
 const AVATOR_URL_KYOTO = "https://github.com/gpioblink/anzen-kyoto/blob/logo/anzen-kyoto.jpeg?raw=true";
 const AVATOR_URL_PRINCESS = "https://github.com/gpioblink/anzen-kyoto/blob/logo/anzen-ojousama.jpeg?raw=true";
 
+const MAIKO_KEYWORD = "!use:maikosan";
+const PRINCESS_KEYWORD = "!use:princess";
+
+
 const KYOTO_PROMPT = `
 入力を「京言葉」と呼ばれる遠回しな言い方に置き換えてください。
 対話ではなく、置き換えた結果を返してください。
@@ -68,23 +72,35 @@ class Main {
     // イベントデータはJSON形式となっているため、parseして取得
     const eventData = JSON.parse(e.postData.contents).events[0];
     const replyToken = eventData.replyToken;
+    const userId = eventData.source.userId;
     const msgType = eventData.message.type;
-
-    const kyotoTeacher = (Math.random()>0.5) ? new Teacher(KYOTO_PROMPT, "まいこはん", AVATOR_URL_KYOTO) : new Teacher(PRINCESS_PROMPT, "プリンセス", AVATOR_URL_PRINCESS);
     const lineBot = new LINEController(replyToken);
 
     if (msgType !== 'text') return;
     const userInputText = eventData.message.text;
     console.log(userInputText);
 
-    if (userInputText === "!use:maikosan" || userInputText === "!use:princess") {
-      // TODO: ユーザー処理を実装する。ステートが必要になるので一旦保留。
-      lineBot.sendMessage("メニューが押されました! これはGPTからの返答ではありません。");
+    // userIDより前回ステートを参照して、使用するBOTを選択
+    const userState = UserStateDatabase.getCache(userId);
+    const kyotoTeacher = (userState !== PRINCESS_KEYWORD) ? new Teacher(KYOTO_PROMPT, "まいこはん", AVATOR_URL_KYOTO) : new Teacher(PRINCESS_PROMPT, "プリンセス", AVATOR_URL_PRINCESS);
+
+
+    if (userInputText === MAIKO_KEYWORD) {
+      UserStateDatabase.setCache(userId, MAIKO_KEYWORD);
+      lineBot.sendMessage("[心理的安全性サポーター変更] 「京都のまいこはん」に切り替えました。");
+      return;
+    }
+
+    if (userInputText === PRINCESS_KEYWORD) {
+      UserStateDatabase.setCache(userId, MAIKO_KEYWORD);
+      lineBot.sendMessage("[心理的安全性サポーター変更] 「育ちの良いお嬢様」に切り替えました。");
       return;
     }
     
     const assistantText = kyotoTeacher.teach(userInputText);
     lineBot.sendMessage(assistantText, kyotoTeacher.name, kyotoTeacher.avatorUrl);
+    SpreadsheetAppController.addLog("userid", userId);
+    SpreadsheetAppController.addLog("userState", userState);
     SpreadsheetAppController.addLog("user", userInputText);
     SpreadsheetAppController.addLog("assistant", assistantText);
   }
@@ -143,6 +159,18 @@ class SpreadsheetAppController {
       histories.push({ "user": userText, "assistant": assistantText });
     }
     return histories;
+  }
+}
+
+class UserStateDatabase {
+  private static cache = CacheService.getScriptCache();
+
+  public static setCache(key: string, value: string) {
+    this.cache.put(key, value, 21600);
+  }
+
+  public static getCache(key: string): string {
+    return this.cache.get(key) || MAIKO_KEYWORD;
   }
 }
   
