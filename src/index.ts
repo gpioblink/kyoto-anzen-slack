@@ -77,7 +77,7 @@ class Main {
     const userInputText = eventData.message.text;
     console.log(userInputText);
 
-    if (userInputText === "!menu1" || userInputText === "!menu2") {
+    if (userInputText === "!use:maikosan" || userInputText === "!use:princess") {
       // TODO: ユーザー処理を実装する。ステートが必要になるので一旦保留。
       lineBot.sendMessage("メニューが押されました! これはGPTからの返答ではありません。");
       return;
