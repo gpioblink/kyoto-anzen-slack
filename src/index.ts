@@ -92,7 +92,7 @@ class Main {
     }
 
     if (userInputText === PRINCESS_KEYWORD) {
-      UserStateDatabase.setCache(userId, MAIKO_KEYWORD);
+      UserStateDatabase.setCache(userId, PRINCESS_KEYWORD);
       lineBot.sendMessage("[心理的安全性サポーター変更] 「育ちの良いお嬢様」に切り替えました。");
       return;
     }
