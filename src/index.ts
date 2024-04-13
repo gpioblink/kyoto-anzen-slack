@@ -1,9 +1,12 @@
-const LINEAPI_TOKEN = process.env.LINEAPI_TOKEN;
-const OPENAI_APIKEY = process.env.OPENAI_APIKEY;
+const LINEAPI_TOKEN = PropertiesService.getScriptProperties().getProperty("LINEAPI_TOKEN");
+const OPENAI_APIKEY = PropertiesService.getScriptProperties().getProperty("OPENAI_APIKEY");
 
-const REPLY_URL = process.env.REPLY_URL || "";
-const TALK_LOG_SHEET_URL = process.env.TALK_LOG_SHEET_URL || "";
-const OPENAI_COMPLETIONS_URL = process.env.OPENAI_COMPLETIONS_URL || "";
+const REPLY_URL = PropertiesService.getScriptProperties().getProperty("REPLY_URL") || "";
+const TALK_LOG_SHEET_URL = PropertiesService.getScriptProperties().getProperty("TALK_LOG_SHEET_URL") || "";
+const OPENAI_COMPLETIONS_URL = PropertiesService.getScriptProperties().getProperty("OPENAI_COMPLETIONS_URL") || "";
+
+const AVATOR_URL_KYOTO = "https://private-user-images.githubusercontent.com/17077205/322231201-a2acd5ee-edb8-4f8c-8c97-194404e51a16.jpeg?jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3MTMwNDMwNTQsIm5iZiI6MTcxMzA0Mjc1NCwicGF0aCI6Ii8xNzA3NzIwNS8zMjIyMzEyMDEtYTJhY2Q1ZWUtZWRiOC00ZjhjLThjOTctMTk0NDA0ZTUxYTE2LmpwZWc_WC1BbXotQWxnb3JpdGhtPUFXUzQtSE1BQy1TSEEyNTYmWC1BbXotQ3JlZGVudGlhbD1BS0lBVkNPRFlMU0E1M1BRSzRaQSUyRjIwMjQwNDEzJTJGdXMtZWFzdC0xJTJGczMlMkZhd3M0X3JlcXVlc3QmWC1BbXotRGF0ZT0yMDI0MDQxM1QyMTEyMzRaJlgtQW16LUV4cGlyZXM9MzAwJlgtQW16LVNpZ25hdHVyZT05OTYwMWE1ZjU4ZDY2ZjkwYWRiZTVkZGI3MDJmNTBkNWQzODM1NmUyZWQ1OTc4YzI2NDc2OTIyOTRjZjM4MDdlJlgtQW16LVNpZ25lZEhlYWRlcnM9aG9zdCZhY3Rvcl9pZD0wJmtleV9pZD0wJnJlcG9faWQ9MCJ9.JRWLXhLT7cK4Z0o2yGQjp-f4Re83ahIeDFAYtobqpms";
+const AVATOR_URL_PRINCESS = "https://private-user-images.githubusercontent.com/17077205/322231200-911b98c3-14f6-421e-9f21-c2b240b43230.jpeg?jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3MTMwNDMwNTQsIm5iZiI6MTcxMzA0Mjc1NCwicGF0aCI6Ii8xNzA3NzIwNS8zMjIyMzEyMDAtOTExYjk4YzMtMTRmNi00MjFlLTlmMjEtYzJiMjQwYjQzMjMwLmpwZWc_WC1BbXotQWxnb3JpdGhtPUFXUzQtSE1BQy1TSEEyNTYmWC1BbXotQ3JlZGVudGlhbD1BS0lBVkNPRFlMU0E1M1BRSzRaQSUyRjIwMjQwNDEzJTJGdXMtZWFzdC0xJTJGczMlMkZhd3M0X3JlcXVlc3QmWC1BbXotRGF0ZT0yMDI0MDQxM1QyMTEyMzRaJlgtQW16LUV4cGlyZXM9MzAwJlgtQW16LVNpZ25hdHVyZT0xYzE1YTViYmViNjQ4NmNkNjViYjUxYzQ3Njc2NzExYjA4YWZiOTE0MTBhOGY3NmJjYTgzY2U1NWI4YzBlMjMxJlgtQW16LVNpZ25lZEhlYWRlcnM9aG9zdCZhY3Rvcl9pZD0wJmtleV9pZD0wJnJlcG9faWQ9MCJ9.tc6mEf5A0uSJH28vWRJvHvo319sJwguEA1mmlpsogXM";
 
 const KYOTO_PROMPT = `
 入力を「京言葉」と呼ばれる遠回しな言い方に置き換えてください。
@@ -31,6 +34,31 @@ const KYOTO_PROMPT = `
 返答は、元の文章を含めず、結果だけを返してください。また、「」を含めないでください。 **会話ではなく、元の言葉を単に置き換えただけのものを返してください。**
 `
 
+const PRINCESS_PROMPT = `
+入力を「お嬢様言葉」と呼ばれる遠回しな言い方に置き換えてください。
+対話ではなく、置き換えた結果を返してください。
+
+## 考え方
+
+お嬢様は一切ネガティブな単語を使いませんが、遠回しな皮肉を多用します。良いポイントを褒めつつ、遠回しに批判します。皮肉に気づいてもらえるよう、皮肉のポイントを追加して話します。いわゆる箱入りお嬢様であり、下ネタや悪い言葉は避けて話します。
+
+語尾に「ですわ」や「あそばせ」をつけて話します。また、正しい敬語を用いて話します。
+
+## 例
+
+- 「こんにちは」 → 「ごきげんよう」
+- 「ありがとう」 → 「ありがとうございますわ」
+- 「ごめんなさい」 → 「お見苦しいところをお見せしましてごめんあそばせ」
+- 「疲れた」 → 「お休みをいただきたく存じますわ」
+- 「良くない」 → 「マリア様が見ていらっしゃるわ」
+- 「東京は臭くて嫌いです」 → 「東京の香りには独特の魅力がございますわ」
+- 「教授の話が長すぎて嫌だ」 → 「教授のお話は、さながら流れる水のように広く深い教えがございますわ。」
+
+## 返答
+
+返答は、元の文章を含めず、結果だけを返してください。また、返答には「」を含めないでください。**会話ではなく、元の言葉を単に置き換えただけのものを返してください。**
+`
+
 function doPost(e: GoogleAppsScript.Events.DoPost) {
   Main.doPostRequestFromLINE(e);
 }
@@ -42,7 +70,7 @@ class Main {
     const replyToken = eventData.replyToken;
     const msgType = eventData.message.type;
 
-    const kyotoTeacher = new Teacher(KYOTO_PROMPT, "京都人", "");
+    const kyotoTeacher = new Teacher(KYOTO_PROMPT, "婉曲が大好きな京都のまいこはん", KYOTO_PROMPT);
     const lineBot = new LINEController(replyToken);
 
     if (msgType !== 'text') return;
@@ -192,7 +220,7 @@ class ChatGPTHandler {
       payload: JSON.stringify({
         model: "gpt-4-turbo",
         messages: fullPrompt,
-        temperature: 1,
+        temperature: 0.5,
         max_tokens: 256,
         top_p: 1,
         frequency_penalty: 0,
