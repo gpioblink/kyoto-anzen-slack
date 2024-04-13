@@ -84,7 +84,7 @@ class Main {
     }
     
     const assistantText = kyotoTeacher.teach(userInputText);
-    lineBot.sendMessage(assistantText);
+    lineBot.sendMessage(assistantText, kyotoTeacher.name, kyotoTeacher.avatorUrl);
     SpreadsheetAppController.addLog("user", userInputText);
     SpreadsheetAppController.addLog("assistant", assistantText);
   }
@@ -92,8 +92,8 @@ class Main {
 
 class Teacher {
   private prompt: string;
-  private name: string;
-  private avatorUrl: string;
+  public readonly name: string;
+  public readonly avatorUrl: string;
 
   constructor(prompt: string, name:string, avatorUrl: string) {
     this.prompt = prompt;
