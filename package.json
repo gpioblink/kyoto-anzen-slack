@@ -1,0 +1,15 @@
+{
+  "name": "anzen-kyoto",
+  "version": "1.0.0",
+  "main": "index.js",
+  "repository": "git@github.com:gpioblink/anzen-kyoto.git",
+  "author": "gpioblink <gpioblink@gmail.com>",
+  "license": "MIT",
+  "devDependencies": {
+    "@google/clasp": "^2.4.2",
+    "typescript": "^5.4.5"
+  },
+  "dependencies": {
+    "@types/google-apps-script": "^1.0.83"
+  }
+}
