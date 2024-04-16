@@ -28,6 +28,14 @@ OpenAIのサイトからAPIキーを発行し、クレジットカードで残�
 
 Slack Appの公式サイトからAPIキーを発行。
 
+このサイトのSlack関連のところをやる。
+
+https://zenn.dev/lclco/articles/712d482d07e18c
+
+Appを追加できなかったら、Botにユーザーネーム与えるのも忘れているかも。
+
+`BOT_AUTH_TOKEN`、`MEMBER_ID`、`CHANNEL_ID`がわかったらOK。
+
 ### ログ保存用スプレッドシートの用意
 
 http://spreadsheet.new から適当なスプレッドシートを作成。
@@ -40,7 +48,10 @@ http://spreadsheet.new から適当なスプレッドシートを作成。
 プロジェクトルートに以下の内容を記載した`.env`を作成してください。
 
 ```
-LINEAPI_TOKEN="jhno********"
+SLACKBOT_AUTH_TOKEN="xoxb-************"
+SLACKBOT_MEMBER_ID="U************"
+SLACKBOT_CHANNEL_ID="D************"
+
 REPLY_URL="https://api.line.me/v2/bot/message/reply"
 OPENAI_APIKEY="sk-DE************"
 TALK_LOG_SHEET_URL="https://docs.google.com/spreadsheets/d/************"
@@ -67,3 +78,9 @@ yarn clasp push
 
 - GAS + Typescript のいい感じのビルド環境を整える
   - https://zenn.dev/terass_dev/articles/a39ab8d0128eb1
+- Slackで動くChatGPTのチャットボットをGoogle Apps Script（GAS）でサクッと作ってみる
+  - https://zenn.dev/lclco/articles/712d482d07e18c
+
+## お願い
+
+このアプリやドキュメントには一部過激発言がありますが、これはプロンプト作成の過程で生まれた開発用のものです。開発者の意見ではないことをご承知おきください。
