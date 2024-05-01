@@ -1,11 +1,9 @@
 const SLACKBOT_VERIFICATION_TOKEN = PropertiesService.getScriptProperties().getProperty("SLACKBOT_VERIFICATION_TOKEN") || "";
 const SLACKBOT_AUTH_TOKEN = PropertiesService.getScriptProperties().getProperty("SLACKBOT_AUTH_TOKEN") || "";
 const SLACKBOT_MEMBER_ID = PropertiesService.getScriptProperties().getProperty("SLACKBOT_MEMBER_ID") || "";
-const SLACKBOT_CHANNEL_ID = PropertiesService.getScriptProperties().getProperty("SLACKBOT_CHANNEL_ID") || "";
 
 const OPENAI_APIKEY = PropertiesService.getScriptProperties().getProperty("OPENAI_APIKEY") || "";
 
-const REPLY_URL = PropertiesService.getScriptProperties().getProperty("REPLY_URL") || "";
 const TALK_LOG_SHEET_URL = PropertiesService.getScriptProperties().getProperty("TALK_LOG_SHEET_URL") || "";
 const OPENAI_COMPLETIONS_URL = PropertiesService.getScriptProperties().getProperty("OPENAI_COMPLETIONS_URL") || "";
 
@@ -66,13 +64,12 @@ const PRINCESS_PROMPT = `
 返答は、元の文章を含めず、結果だけを返してください。また、返答には「」を含めないでください。**会話ではなく、元の言葉を単に置き換えただけのものを返してください。**
 `
 
-function doPost(e: GoogleAppsScript.Events.DoPost) {
-  Main.doPostRequestFromSlack(e);
+function doPost(e: GoogleAppsScript.Events.DoPost): GoogleAppsScript.Content.TextOutput {
+  return Main.doPostRequestFromSlack(e);
 }
 
 class Main {
   public static doPostRequestFromSlack(e: GoogleAppsScript.Events.DoPost) {
-
     const token = e.parameter.token;
     if (SLACKBOT_VERIFICATION_TOKEN != token) {
       throw new Error("invalid token.");
@@ -82,9 +79,6 @@ class Main {
 
     // ref: https://api.slack.com/interactivity/slash-commands#app_command_handling
     const userId = reqDict.get("user_id") || "";
-    // const msgId = triggerMsg.client_msg_id;
-    const channelId = reqDict.get("channel_id") || "";
-    // const ts = triggerMsg.ts;
     const responseUrl = reqDict.get("response_url") || "";
     const userInputText = reqDict.get("text") || "";
     console.log(userInputText);
@@ -98,13 +92,13 @@ class Main {
     if (userInputText === MAIKO_KEYWORD) {
       UserStateDatabase.setCache(userId, MAIKO_KEYWORD);
       slackController.sendMessage("[心理的安全性サポーター変更] 「京都のまいこはん」に切り替えました。", "ephemeral");
-      return;
+      return ContentService.createTextOutput("OK");
     }
 
     if (userInputText === PRINCESS_KEYWORD) {
       UserStateDatabase.setCache(userId, PRINCESS_KEYWORD);
       slackController.sendMessage("[心理的安全性サポーター変更] 「育ちの良いお嬢様」に切り替えました。", "ephemeral");
-      return;
+      return ContentService.createTextOutput("OK");
     }
     
     try {
