@@ -65,17 +65,29 @@ const PRINCESS_PROMPT = `
 `
 
 function doPost(e: GoogleAppsScript.Events.DoPost): GoogleAppsScript.Content.TextOutput {
-  return Main.doPostRequestFromSlack(e);
+  return Main.enqueueAndTemporalResponseForSlack(e);
+}
+
+function timeDriven(e: GoogleAppsScript.Events.TimeDriven) {
+  return Main.doTimeDrivenRequestFromSlackQueue();
 }
 
 class Main {
-  public static doPostRequestFromSlack(e: GoogleAppsScript.Events.DoPost) {
+
+  public static enqueueAndTemporalResponseForSlack(e: GoogleAppsScript.Events.DoPost) {
     const token = e.parameter.token;
     if (SLACKBOT_VERIFICATION_TOKEN != token) {
       throw new Error("invalid token.");
     }
+    Queue.enQueue(e.postData.contents);
+    return ContentService.createTextOutput("リクエストを受け付けました。処理完了までお待ちください。");
+  }
 
-    const reqDict = QueryString.decodeToMap(e.postData.contents);
+  public static doTimeDrivenRequestFromSlackQueue() {
+    const res = Queue.deQueue();
+    if(res === undefined) return;
+
+    const reqDict = QueryString.decodeToMap(res);
 
     // ref: https://api.slack.com/interactivity/slash-commands#app_command_handling
     const userId = reqDict.get("user_id") || "";
@@ -115,6 +127,26 @@ class Main {
       return ContentService.createTextOutput("NG");
     }
 
+  }
+}
+
+class Queue {
+  // TODO: 多分トランザクション的な問題が起きるのでもっとまともな方法を考える(~~え、GAS使うなって~~)
+  static readonly QUEUE_KEY = "queue";
+
+  public static enQueue(rawResponse:string) {
+    const cache = CacheService.getScriptCache();
+    const queue = JSON.parse(cache.get(this.QUEUE_KEY) || "[]") as string[];
+    queue.push(rawResponse);
+    cache.put(this.QUEUE_KEY, JSON.stringify(queue), 100);
+  }
+
+  public static deQueue(): string | undefined {
+    const cache = CacheService.getScriptCache();
+    const queue = JSON.parse(cache.get(this.QUEUE_KEY) || "[]") as string[];
+    const out = queue.shift();
+    cache.put(this.QUEUE_KEY, JSON.stringify(queue), 100);
+    return out;
   }
 }
 
