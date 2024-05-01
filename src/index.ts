@@ -79,12 +79,12 @@ class Main {
     if (SLACKBOT_VERIFICATION_TOKEN != token) {
       throw new Error("invalid token.");
     }
-    Queue.enQueue(e.postData.contents);
+    QueueTrigger.enQueue(e.postData.contents);
     return ContentService.createTextOutput("リクエストを受け付けました。処理完了までお待ちください。");
   }
 
   public static doTimeDrivenRequestFromSlackQueue() {
-    const res = Queue.deQueue();
+    const res = QueueTrigger.deQueue();
     if(res === undefined) return;
 
     const reqDict = QueryString.decodeToMap(res);
@@ -130,8 +130,9 @@ class Main {
   }
 }
 
-class Queue {
-  // TODO: 多分トランザクション的な問題が起きるのでもっとまともな方法を考える(~~え、GAS使うなって~~)
+class QueueTrigger {
+  // TODO: トランザクション的な問題が起きるのでもっとまともな方法を考える(~~え、GAS使うなって~~)
+  
   static readonly QUEUE_KEY = "queue";
 
   public static enQueue(rawResponse:string) {
@@ -139,6 +140,9 @@ class Queue {
     const queue = JSON.parse(cache.get(this.QUEUE_KEY) || "[]") as string[];
     queue.push(rawResponse);
     cache.put(this.QUEUE_KEY, JSON.stringify(queue), 100);
+
+    // Queueが実行できるようにするためにTriggerを消す
+    ScriptApp.newTrigger('timeDriven').timeBased().after(0).create();
   }
 
   public static deQueue(): string | undefined {
@@ -146,6 +150,14 @@ class Queue {
     const queue = JSON.parse(cache.get(this.QUEUE_KEY) || "[]") as string[];
     const out = queue.shift();
     cache.put(this.QUEUE_KEY, JSON.stringify(queue), 100);
+
+    // queueがなければTriggerを消す
+    if(queue.length === 0) {
+      ScriptApp.getProjectTriggers().forEach( t => {
+        ScriptApp.deleteTrigger(t);
+      });
+    }
+
     return out;
   }
 }
