@@ -72,7 +72,6 @@ function doPost(e: GoogleAppsScript.Events.DoPost) {
 
 class Main {
   public static doPostRequestFromSlack(e: GoogleAppsScript.Events.DoPost) {
-    // ref: https://github.com/mokomoka/SlackBots/blob/master/sources/ForwardBot.gs
 
     const token = e.parameter.token;
     if (SLACKBOT_VERIFICATION_TOKEN != token) {
@@ -81,31 +80,16 @@ class Main {
 
     console.log(e.postData.contents);
 
-    const reqObj = JSON.parse(e.postData.contents);
+    const reqDict = QueryString.decodeToMap(e.postData.contents);
 
-    // Slackから認証コードが送られてきた場合(初回接続時)
-    if (reqObj.type == "url_verification") {
-      // 認証コードをそのまま返すことで、アプリをSlackに登録する処理が完了する
-      return ContentService.createTextOutput(reqObj.challenge);
-    }
+    console.log(reqDict);
 
-    // Slackからのコールバック以外の場合、OKを返して処理を終了する
-    if (reqObj.type !== "event_callback" || reqObj.event.type !== "message") {
-      return ContentService.createTextOutput("OK");
-    }
-
-    // メッセージが編集または削除された場合、OKを返して処理を終了する
-    if (reqObj.event.subtype !== undefined) {
-      return ContentService.createTextOutput("OK");
-    }
-
-    // Slackから送信されたトリガーメッセージ
-    const triggerMsg = reqObj.event;
-    const userId = triggerMsg.user;
-    const msgId = triggerMsg.client_msg_id;
-    const channelId = triggerMsg.channel;
-    const ts = triggerMsg.ts;
-    const userInputText = triggerMsg.text;
+    // ref: https://api.slack.com/interactivity/slash-commands#app_command_handling
+    const userId = reqDict.get("user_id") || "";
+    // const msgId = triggerMsg.client_msg_id;
+    const channelId = reqDict.get("channel_id") || "";
+    // const ts = triggerMsg.ts;
+    const userInputText = reqDict.get("text") || "";
     console.log(userInputText);
 
     // Bot自身によるメッセージである場合、OKを返して処理を終了する
@@ -114,37 +98,35 @@ class Main {
     }
 
     // 処理したメッセージのIDをキャッシュして、同じメッセージを無視する
-    const isCachedId = (id: string) => {
-      const cache = CacheService.getScriptCache();
-      const isCached = cache.get(`SLACKMID_${id}`); // キャッシュはLINEAPI処理でも使ってるためキーにSLACKMID_をつけている
-      // キャッシュされたIDである場合、trueを返す
-      if (isCached) return true;
-      // IDをキャッシュに追加する
-      cache.put(`SLACKMID_${id}`, "true", 60 * 5); // 5分間キャッシュする
-      return false;
-    };
+    // const isCachedId = (id: string) => {
+    //   const cache = CacheService.getScriptCache();
+    //   const isCached = cache.get(`SLACKMID_${id}`); // キャッシュはLINEAPI処理でも使ってるためキーにSLACKMID_をつけている
+    //   // キャッシュされたIDである場合、trueを返す
+    //   if (isCached) return true;
+    //   // IDをキャッシュに追加する
+    //   cache.put(`SLACKMID_${id}`, "true", 60 * 5); // 5分間キャッシュする
+    //   return false;
+    // };
 
     // 処理済みのメッセージの場合、OKを返して処理を終了する
-    if (isCachedId(msgId)) {
-      return ContentService.createTextOutput("OK");
-    }
+    // if (isCachedId(msgId)) {
+    //   return ContentService.createTextOutput("OK");
+    // }
 
 
     // userIDより前回ステートを参照して、使用するBOTを選択
     const userState = UserStateDatabase.getCache(userId);
     const kyotoTeacher = (userState !== PRINCESS_KEYWORD) ? new Teacher(KYOTO_PROMPT, "まいこはん", AVATOR_URL_KYOTO) : new Teacher(PRINCESS_PROMPT, "プリンセス", AVATOR_URL_PRINCESS);
 
-    const slackBot = new SlackController(channelId, ts);
-
     if (userInputText === MAIKO_KEYWORD) {
       UserStateDatabase.setCache(userId, MAIKO_KEYWORD);
-      slackBot.sendMessage("[心理的安全性サポーター変更] 「京都のまいこはん」に切り替えました。");
+      SlackController.sendMessage("[心理的安全性サポーター変更] 「京都のまいこはん」に切り替えました。", channelId);
       return;
     }
 
     if (userInputText === PRINCESS_KEYWORD) {
       UserStateDatabase.setCache(userId, PRINCESS_KEYWORD);
-      slackBot.sendMessage("[心理的安全性サポーター変更] 「育ちの良いお嬢様」に切り替えました。");
+      SlackController.sendMessage("[心理的安全性サポーター変更] 「育ちの良いお嬢様」に切り替えました。", channelId);
       return;
     }
     
@@ -155,13 +137,24 @@ class Main {
       if (!assistantText) return ContentService.createTextOutput("OK");
 
       // Slackに応答メッセージを投稿する
-      slackBot.sendMessage(channelId);
+      SlackController.sendMessage(assistantText, channelId);
       return ContentService.createTextOutput("OK");
     } catch (e: any) {
       console.error(e?.stack, "応答エラーが発生");
       return ContentService.createTextOutput("NG");
     }
 
+  }
+}
+
+class QueryString {
+  public static decodeToMap(encodedText: string){
+    const splited = encodedText.split("&");
+    const dict = new Map(splited.map(s => {
+      const [k, v] = s.split("=");
+      return [decodeURIComponent(k), decodeURIComponent(v)]
+    }));
+    return dict;
   }
 }
 
@@ -234,29 +227,11 @@ class UserStateDatabase {
 }
 
 class SlackController {
-  private channelId: string;
-  private thread_ts: string;
-
-  constructor(channelId: string, thread_ts: string) {
-    this.channelId = channelId;
-    this.thread_ts = thread_ts;
-  }
-
-  // public static verifyRequest(prop: GoogleAppsScript.Properties.Properties, jsonResponse: any) {
-  //   const verificationToken = prop.getProperty("verification_token") || "";
-  //   const responseBodyToken = jsonResponse.token || "";
-  //   const challenge = jsonResponse.challenge || "";
-  //   if(verificationToken === responseBodyToken) {
-  //     return ContentService.createTextOutput(challenge);
-  //   }
-  // }
-
-  public sendMessage(text: string) {
+  public static sendMessage(text: string, channelId: string) {
     const payload = {
       token: SLACKBOT_AUTH_TOKEN,
-      channel: this.channelId,
+      channel: channelId,
       text: text,
-      thread_ts: this.thread_ts,
     };
     const options: GoogleAppsScript.URL_Fetch.URLFetchRequestOptions = {
       method: "post",
@@ -264,7 +239,6 @@ class SlackController {
       payload: JSON.stringify(payload),
     };
     UrlFetchApp.fetch("https://slack.com/api/chat.postMessage", options);
-  
   }
 }
 
