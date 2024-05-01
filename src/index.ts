@@ -1,5 +1,9 @@
-const LINEAPI_TOKEN = PropertiesService.getScriptProperties().getProperty("LINEAPI_TOKEN");
-const OPENAI_APIKEY = PropertiesService.getScriptProperties().getProperty("OPENAI_APIKEY");
+const SLACKBOT_VERIFICATION_TOKEN = PropertiesService.getScriptProperties().getProperty("SLACKBOT_VERIFICATION_TOKEN") || "";
+const SLACKBOT_AUTH_TOKEN = PropertiesService.getScriptProperties().getProperty("SLACKBOT_AUTH_TOKEN") || "";
+const SLACKBOT_MEMBER_ID = PropertiesService.getScriptProperties().getProperty("SLACKBOT_MEMBER_ID") || "";
+const SLACKBOT_CHANNEL_ID = PropertiesService.getScriptProperties().getProperty("SLACKBOT_CHANNEL_ID") || "";
+
+const OPENAI_APIKEY = PropertiesService.getScriptProperties().getProperty("OPENAI_APIKEY") || "";
 
 const REPLY_URL = PropertiesService.getScriptProperties().getProperty("REPLY_URL") || "";
 const TALK_LOG_SHEET_URL = PropertiesService.getScriptProperties().getProperty("TALK_LOG_SHEET_URL") || "";
@@ -63,45 +67,101 @@ const PRINCESS_PROMPT = `
 `
 
 function doPost(e: GoogleAppsScript.Events.DoPost) {
-  Main.doPostRequestFromLINE(e);
+  Main.doPostRequestFromSlack(e);
 }
 
 class Main {
-  public static doPostRequestFromLINE(e: GoogleAppsScript.Events.DoPost) {
-    // イベントデータはJSON形式となっているため、parseして取得
-    const eventData = JSON.parse(e.postData.contents).events[0];
-    const replyToken = eventData.replyToken;
-    const userId = eventData.source.userId;
-    const msgType = eventData.message.type;
-    const lineBot = new LINEController(replyToken);
+  public static doPostRequestFromSlack(e: GoogleAppsScript.Events.DoPost) {
+    // ref: https://github.com/mokomoka/SlackBots/blob/master/sources/ForwardBot.gs
 
-    if (msgType !== 'text') return;
-    const userInputText = eventData.message.text;
+    const token = e.parameter.token;
+    if (SLACKBOT_VERIFICATION_TOKEN != token) {
+      throw new Error("invalid token.");
+    }
+
+    console.log(e.postData.contents);
+
+    const reqObj = JSON.parse(e.postData.contents);
+
+    // Slackから認証コードが送られてきた場合(初回接続時)
+    if (reqObj.type == "url_verification") {
+      // 認証コードをそのまま返すことで、アプリをSlackに登録する処理が完了する
+      return ContentService.createTextOutput(reqObj.challenge);
+    }
+
+    // Slackからのコールバック以外の場合、OKを返して処理を終了する
+    if (reqObj.type !== "event_callback" || reqObj.event.type !== "message") {
+      return ContentService.createTextOutput("OK");
+    }
+
+    // メッセージが編集または削除された場合、OKを返して処理を終了する
+    if (reqObj.event.subtype !== undefined) {
+      return ContentService.createTextOutput("OK");
+    }
+
+    // Slackから送信されたトリガーメッセージ
+    const triggerMsg = reqObj.event;
+    const userId = triggerMsg.user;
+    const msgId = triggerMsg.client_msg_id;
+    const channelId = triggerMsg.channel;
+    const ts = triggerMsg.ts;
+    const userInputText = triggerMsg.text;
     console.log(userInputText);
+
+    // Bot自身によるメッセージである場合、OKを返して処理を終了する
+    if (userId === SLACKBOT_MEMBER_ID) {
+      return ContentService.createTextOutput("OK");
+    }
+
+    // 処理したメッセージのIDをキャッシュして、同じメッセージを無視する
+    const isCachedId = (id: string) => {
+      const cache = CacheService.getScriptCache();
+      const isCached = cache.get(`SLACKMID_${id}`); // キャッシュはLINEAPI処理でも使ってるためキーにSLACKMID_をつけている
+      // キャッシュされたIDである場合、trueを返す
+      if (isCached) return true;
+      // IDをキャッシュに追加する
+      cache.put(`SLACKMID_${id}`, "true", 60 * 5); // 5分間キャッシュする
+      return false;
+    };
+
+    // 処理済みのメッセージの場合、OKを返して処理を終了する
+    if (isCachedId(msgId)) {
+      return ContentService.createTextOutput("OK");
+    }
+
 
     // userIDより前回ステートを参照して、使用するBOTを選択
     const userState = UserStateDatabase.getCache(userId);
     const kyotoTeacher = (userState !== PRINCESS_KEYWORD) ? new Teacher(KYOTO_PROMPT, "まいこはん", AVATOR_URL_KYOTO) : new Teacher(PRINCESS_PROMPT, "プリンセス", AVATOR_URL_PRINCESS);
 
+    const slackBot = new SlackController(channelId, ts);
 
     if (userInputText === MAIKO_KEYWORD) {
       UserStateDatabase.setCache(userId, MAIKO_KEYWORD);
-      lineBot.sendMessage("[心理的安全性サポーター変更] 「京都のまいこはん」に切り替えました。");
+      slackBot.sendMessage("[心理的安全性サポーター変更] 「京都のまいこはん」に切り替えました。");
       return;
     }
 
     if (userInputText === PRINCESS_KEYWORD) {
       UserStateDatabase.setCache(userId, PRINCESS_KEYWORD);
-      lineBot.sendMessage("[心理的安全性サポーター変更] 「育ちの良いお嬢様」に切り替えました。");
+      slackBot.sendMessage("[心理的安全性サポーター変更] 「育ちの良いお嬢様」に切り替えました。");
       return;
     }
     
-    const assistantText = kyotoTeacher.teach(userInputText);
-    lineBot.sendMessage(assistantText, kyotoTeacher.name, kyotoTeacher.avatorUrl);
-    SpreadsheetAppController.addLog("userid", userId);
-    SpreadsheetAppController.addLog("userState", userState);
-    SpreadsheetAppController.addLog("user", userInputText);
-    SpreadsheetAppController.addLog("assistant", assistantText);
+    try {
+      // 応答メッセージを取得する
+      const assistantText = kyotoTeacher.teach(userInputText);
+      // 応答メッセージが存在しない場合、OKを返して処理を終了する
+      if (!assistantText) return ContentService.createTextOutput("OK");
+
+      // Slackに応答メッセージを投稿する
+      slackBot.sendMessage(channelId);
+      return ContentService.createTextOutput("OK");
+    } catch (e: any) {
+      console.error(e?.stack, "応答エラーが発生");
+      return ContentService.createTextOutput("NG");
+    }
+
   }
 }
 
@@ -172,35 +232,39 @@ class UserStateDatabase {
     return this.cache.get(key) || MAIKO_KEYWORD;
   }
 }
-  
-class LINEController {
-  private replyToken: string;
 
-  constructor(replyToken: string) {
-    this.replyToken = replyToken;
+class SlackController {
+  private channelId: string;
+  private thread_ts: string;
+
+  constructor(channelId: string, thread_ts: string) {
+    this.channelId = channelId;
+    this.thread_ts = thread_ts;
   }
-  public sendMessage(text: string, botUserName?: string, botIconUrl?: string) {
-    const message = {
-      'replyToken': this.replyToken,
-      'messages': [{
-        'type': 'text',
-        'text': text,
-        'sender': {
-          // 'name': botUserName,
-          'iconUrl': botIconUrl
-        }
-      }]
-    }
 
+  // public static verifyRequest(prop: GoogleAppsScript.Properties.Properties, jsonResponse: any) {
+  //   const verificationToken = prop.getProperty("verification_token") || "";
+  //   const responseBodyToken = jsonResponse.token || "";
+  //   const challenge = jsonResponse.challenge || "";
+  //   if(verificationToken === responseBodyToken) {
+  //     return ContentService.createTextOutput(challenge);
+  //   }
+  // }
+
+  public sendMessage(text: string) {
+    const payload = {
+      token: SLACKBOT_AUTH_TOKEN,
+      channel: this.channelId,
+      text: text,
+      thread_ts: this.thread_ts,
+    };
     const options: GoogleAppsScript.URL_Fetch.URLFetchRequestOptions = {
-        'method': 'post',
-        'headers': {
-          'Content-Type': 'application/json; charset=UTF-8',
-          'Authorization': 'Bearer ' + LINEAPI_TOKEN,
-        },
-        'payload': JSON.stringify(message)
-      };
-    UrlFetchApp.fetch(REPLY_URL, options);
+      method: "post",
+      contentType: "application/json",
+      payload: JSON.stringify(payload),
+    };
+    UrlFetchApp.fetch("https://slack.com/api/chat.postMessage", options);
+  
   }
 }
 
