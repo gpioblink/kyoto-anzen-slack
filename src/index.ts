@@ -78,55 +78,32 @@ class Main {
       throw new Error("invalid token.");
     }
 
-    console.log(e.postData.contents);
-
     const reqDict = QueryString.decodeToMap(e.postData.contents);
-
-    console.log(reqDict);
 
     // ref: https://api.slack.com/interactivity/slash-commands#app_command_handling
     const userId = reqDict.get("user_id") || "";
     // const msgId = triggerMsg.client_msg_id;
     const channelId = reqDict.get("channel_id") || "";
     // const ts = triggerMsg.ts;
+    const responseUrl = reqDict.get("response_url") || "";
     const userInputText = reqDict.get("text") || "";
     console.log(userInputText);
-
-    // Bot自身によるメッセージである場合、OKを返して処理を終了する
-    if (userId === SLACKBOT_MEMBER_ID) {
-      return ContentService.createTextOutput("OK");
-    }
-
-    // 処理したメッセージのIDをキャッシュして、同じメッセージを無視する
-    // const isCachedId = (id: string) => {
-    //   const cache = CacheService.getScriptCache();
-    //   const isCached = cache.get(`SLACKMID_${id}`); // キャッシュはLINEAPI処理でも使ってるためキーにSLACKMID_をつけている
-    //   // キャッシュされたIDである場合、trueを返す
-    //   if (isCached) return true;
-    //   // IDをキャッシュに追加する
-    //   cache.put(`SLACKMID_${id}`, "true", 60 * 5); // 5分間キャッシュする
-    //   return false;
-    // };
-
-    // 処理済みのメッセージの場合、OKを返して処理を終了する
-    // if (isCachedId(msgId)) {
-    //   return ContentService.createTextOutput("OK");
-    // }
-
 
     // userIDより前回ステートを参照して、使用するBOTを選択
     const userState = UserStateDatabase.getCache(userId);
     const kyotoTeacher = (userState !== PRINCESS_KEYWORD) ? new Teacher(KYOTO_PROMPT, "まいこはん", AVATOR_URL_KYOTO) : new Teacher(PRINCESS_PROMPT, "プリンセス", AVATOR_URL_PRINCESS);
 
+    const slackController = new SlackController(responseUrl);
+
     if (userInputText === MAIKO_KEYWORD) {
       UserStateDatabase.setCache(userId, MAIKO_KEYWORD);
-      SlackController.sendMessage("[心理的安全性サポーター変更] 「京都のまいこはん」に切り替えました。", channelId);
+      slackController.sendMessage("[心理的安全性サポーター変更] 「京都のまいこはん」に切り替えました。", "ephemeral");
       return;
     }
 
     if (userInputText === PRINCESS_KEYWORD) {
       UserStateDatabase.setCache(userId, PRINCESS_KEYWORD);
-      SlackController.sendMessage("[心理的安全性サポーター変更] 「育ちの良いお嬢様」に切り替えました。", channelId);
+      slackController.sendMessage("[心理的安全性サポーター変更] 「育ちの良いお嬢様」に切り替えました。", "ephemeral");
       return;
     }
     
@@ -137,7 +114,7 @@ class Main {
       if (!assistantText) return ContentService.createTextOutput("OK");
 
       // Slackに応答メッセージを投稿する
-      SlackController.sendMessage(assistantText, channelId);
+      slackController.sendMessage(assistantText, "in_channel");
       return ContentService.createTextOutput("OK");
     } catch (e: any) {
       console.error(e?.stack, "応答エラーが発生");
@@ -227,18 +204,23 @@ class UserStateDatabase {
 }
 
 class SlackController {
-  public static sendMessage(text: string, channelId: string) {
+  private readonly responseUrl: string;
+
+  constructor(responseUrl: string) {
+    this.responseUrl = responseUrl;
+  }
+
+  public sendMessage(text: string, visibility: "ephemeral" | "in_channel") {
     const payload = {
-      token: SLACKBOT_AUTH_TOKEN,
-      channel: channelId,
-      text: text,
+      "response_type": visibility,
+      "text": text,
     };
     const options: GoogleAppsScript.URL_Fetch.URLFetchRequestOptions = {
       method: "post",
       contentType: "application/json",
       payload: JSON.stringify(payload),
     };
-    UrlFetchApp.fetch("https://slack.com/api/chat.postMessage", options);
+    UrlFetchApp.fetch(this.responseUrl, options);
   }
 }
 
