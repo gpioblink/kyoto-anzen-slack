@@ -65,29 +65,29 @@ const PRINCESS_PROMPT = `
 `
 
 function doPost(e: GoogleAppsScript.Events.DoPost): GoogleAppsScript.Content.TextOutput {
-  return Main.enqueueAndTemporalResponseForSlack(e);
-}
-
-function timeDriven(e: GoogleAppsScript.Events.TimeDriven) {
-  return Main.doTimeDrivenRequestFromSlackQueue();
+  // 特定のkey,valueが存在する場合に自分自身での呼び出しと判定しメイン処理を行う
+  switch(TriggerProxy.checkCallType(e)) {
+    case "slack":
+      return Main.triggerAndTemporalResponseForSlack(e);
+    case "self":
+      return Main.respondToSlackFromLocalTrigger(e);
+  }
 }
 
 class Main {
 
-  public static enqueueAndTemporalResponseForSlack(e: GoogleAppsScript.Events.DoPost) {
+  public static triggerAndTemporalResponseForSlack(e: GoogleAppsScript.Events.DoPost) {    
     const token = e.parameter.token;
     if (SLACKBOT_VERIFICATION_TOKEN != token) {
       throw new Error("invalid token.");
     }
-    QueueTrigger.enQueue(e.postData.contents);
+
+    TriggerProxy.call(e.postData.contents);
     return ContentService.createTextOutput("リクエストを受け付けました。処理完了までお待ちください。");
   }
 
-  public static doTimeDrivenRequestFromSlackQueue() {
-    const res = QueueTrigger.deQueue();
-    if(res === undefined) return;
-
-    const reqDict = QueryString.decodeToMap(res);
+  public static respondToSlackFromLocalTrigger(e: GoogleAppsScript.Events.DoPost) {
+    const reqDict = QueryString.decodeToMap(e.postData.contents);
 
     // ref: https://api.slack.com/interactivity/slash-commands#app_command_handling
     const userId = reqDict.get("user_id") || "";
@@ -130,35 +130,22 @@ class Main {
   }
 }
 
-class QueueTrigger {
-  // TODO: トランザクション的な問題が起きるのでもっとまともな方法を考える(~~え、GAS使うなって~~)
-  
-  static readonly QUEUE_KEY = "queue";
+class TriggerProxy {
+  static readonly RES_TYPE_PARAM = "kyoto-anzen";
+  static readonly RES_TYPE_KEY_SELF = "self";
 
-  public static enQueue(rawResponse:string) {
-    const cache = CacheService.getScriptCache();
-    const queue = JSON.parse(cache.get(this.QUEUE_KEY) || "[]") as string[];
-    queue.push(rawResponse);
-    cache.put(this.QUEUE_KEY, JSON.stringify(queue), 100);
+  public static call(queryString: string) {
+    const selfUrl = ScriptApp.getService().getUrl();
 
-    // Queueが実行できるようにするためにTriggerを消す
-    ScriptApp.newTrigger('timeDriven').timeBased().after(0).create();
+    const options: GoogleAppsScript.URL_Fetch.URLFetchRequestOptions = {
+      method: "post",
+      contentType: "application/json",
+      payload: queryString,
+    };
+    UrlFetchApp.fetch(`${selfUrl}?${this.RES_TYPE_PARAM}=${this.RES_TYPE_KEY_SELF}`, options);
   }
-
-  public static deQueue(): string | undefined {
-    const cache = CacheService.getScriptCache();
-    const queue = JSON.parse(cache.get(this.QUEUE_KEY) || "[]") as string[];
-    const out = queue.shift();
-    cache.put(this.QUEUE_KEY, JSON.stringify(queue), 100);
-
-    // queueがなければTriggerを消す
-    if(queue.length === 0) {
-      ScriptApp.getProjectTriggers().forEach( t => {
-        ScriptApp.deleteTrigger(t);
-      });
-    }
-
-    return out;
+  public static checkCallType(e: GoogleAppsScript.Events.DoPost): "self" | "slack" {
+    return (e.parameter[this.RES_TYPE_PARAM] === this.RES_TYPE_KEY_SELF) ? "self" : "slack";
   }
 }
 
