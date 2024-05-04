@@ -1,14 +1,4 @@
-import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
-
-/**
- *
- * Event doc: https://docs.aws.amazon.com/apigateway/latest/developerguide/set-up-lambda-proxy-integrations.html#api-gateway-simple-proxy-for-lambda-input-format
- * @param {Object} event - API Gateway Lambda Proxy Input Format
- *
- * Return doc: https://docs.aws.amazon.com/apigateway/latest/developerguide/set-up-lambda-proxy-integrations.html
- * @returns {Object} object - API Gateway Lambda Proxy Output Format
- *
- */
+import { APIGatewayEventRequestContext, APIGatewayProxyCallback, APIGatewayProxyEvent, APIGatewayProxyResult, Context, Handler } from 'aws-lambda';
 
 const SLACKBOT_VERIFICATION_TOKEN = process.env["SLACKBOT_VERIFICATION_TOKEN"] || "";
 const SLACKBOT_AUTH_TOKEN = process.env["SLACKBOT_AUTH_TOKEN"] || "";
@@ -76,30 +66,32 @@ const PRINCESS_PROMPT = `
 返答は、元の文章を含めず、結果だけを返してください。また、返答には「」を含めないでください。**会話ではなく、元の言葉を単に置き換えただけのものを返してください。**
 `
 
-function doPost(e: GoogleAppsScript.Events.DoPost): GoogleAppsScript.Content.TextOutput {
-  // 特定のkey,valueが存在する場合に自分自身での呼び出しと判定しメイン処理を行う
-  switch(TriggerProxy.checkCallType(e)) {
-    case "slack":
-      return Main.triggerAndTemporalResponseForSlack(e);
-    case "self":
-      return Main.respondToSlackFromLocalTrigger(e);
-  }
-}
 
-class Main {
+/**
+ *
+ * Event doc: https://docs.aws.amazon.com/apigateway/latest/developerguide/set-up-lambda-proxy-integrations.html#api-gateway-simple-proxy-for-lambda-input-format
+ * @param {Object} event - API Gateway Lambda Proxy Input Format
+ *
+ * Return doc: https://docs.aws.amazon.com/apigateway/latest/developerguide/set-up-lambda-proxy-integrations.html
+ * @returns {Object} object - API Gateway Lambda Proxy Output Format
+ *
+ */
 
-  public static triggerAndTemporalResponseForSlack(e: GoogleAppsScript.Events.DoPost) {    
-    const token = e.parameter.token;
+export const lambdaHandler: Handler = async (event: APIGatewayProxyEvent, context: Context, callback: APIGatewayProxyCallback) => {
+
+    // TODO: 本当はヘッダーのX-Slack-SignatureやX-Slack-Request-Timestampを使った認証を行うようにする
+    const token = event.queryStringParameters?.token || "";
     if (SLACKBOT_VERIFICATION_TOKEN != token) {
       throw new Error("invalid token.");
     }
 
-    TriggerProxy.call(e.postData.contents);
-    return ContentService.createTextOutput("リクエストを受け付けました。処理完了までお待ちください。");
-  }
+    // 3000msec以内にレスポンスを返さないとタイムアウトするので、とりあえず即座にレスポンスを返す
+    callback(null, {
+      statusCode: 200,
+      body: "OK",
+    });
 
-  public static respondToSlackFromLocalTrigger(e: GoogleAppsScript.Events.DoPost) {
-    const reqDict = QueryString.decodeToMap(e.postData.contents);
+    const reqDict = QueryString.decodeToMap(event.body || "");
 
     // ref: https://api.slack.com/interactivity/slash-commands#app_command_handling
     const userId = reqDict.get("user_id") || "";
@@ -116,52 +108,29 @@ class Main {
     if (userInputText === MAIKO_KEYWORD) {
       UserStateDatabase.setCache(userId, MAIKO_KEYWORD);
       slackController.sendMessage("[心理的安全性サポーター変更] 「京都のまいこはん」に切り替えました。", "ephemeral");
-      return ContentService.createTextOutput("OK");
+      return;
     }
 
     if (userInputText === PRINCESS_KEYWORD) {
       UserStateDatabase.setCache(userId, PRINCESS_KEYWORD);
       slackController.sendMessage("[心理的安全性サポーター変更] 「育ちの良いお嬢様」に切り替えました。", "ephemeral");
-      return ContentService.createTextOutput("OK");
+      return;
     }
     
     try {
       // 応答メッセージを取得する
       const assistantText = kyotoTeacher.teach(userInputText);
-      // 応答メッセージが存在しない場合、OKを返して処理を終了する
-      if (!assistantText) return ContentService.createTextOutput("OK");
+      // 応答メッセージが存在しない場合、処理を終了する
+      if (!assistantText) return;
 
       // Slackに応答メッセージを投稿する
       slackController.sendMessage(assistantText, "in_channel");
-      return ContentService.createTextOutput("OK");
+      return;
     } catch (e: any) {
       console.error(e?.stack, "応答エラーが発生");
-      return ContentService.createTextOutput("NG");
+      return;
     }
-
-  }
-}
-
-class TriggerProxy {
-  static readonly RES_TYPE_PARAM = "kyoto-anzen";
-  static readonly RES_TYPE_KEY_SELF = "self";
-
-  public static call(queryString: string) {
-    const selfUrl = ScriptApp.getService().getUrl();
-
-    const options: GoogleAppsScript.URL_Fetch.URLFetchRequestOptions = {
-      method: "post",
-      contentType: "application/json",
-      payload: queryString,
-      muteHttpExceptions: true,
-    };
-    // Todo: 非同期処理追加
-    UrlFetchApp.fetch(`${selfUrl}?${this.RES_TYPE_PARAM}=${this.RES_TYPE_KEY_SELF}`, options);
-  }
-  public static checkCallType(e: GoogleAppsScript.Events.DoPost): "self" | "slack" {
-    return (e.parameter[this.RES_TYPE_PARAM] === this.RES_TYPE_KEY_SELF) ? "self" : "slack";
-  }
-}
+};
 
 class QueryString {
   public static decodeToMap(encodedText: string){
@@ -186,7 +155,7 @@ class Teacher {
   }
 
   public teach(message: string): string {
-    const histories = SpreadsheetAppController.getHistories();
+    // const histories = SpreadsheetAppController.getHistories();
     const prompt = ChatGPTHandler.generateFullPrompt(this.prompt, histories, message);
     return ChatGPTHandler.getAnswer(prompt);
   }
@@ -197,38 +166,38 @@ type SpreadsheetAppHistory = {
     assistant: string;
 }
 
-class SpreadsheetAppController {
-  public static addLog(role:string , message: string) {
-    const spreadSheet = SpreadsheetApp.openByUrl(TALK_LOG_SHEET_URL);
-    const sheet = spreadSheet.getSheetByName("Sheet1");
-    if(sheet === null) {
-      console.log("シートが見つかりませんでした。");
-      return;
-    }
-    const low = sheet.getLastRow();
-    sheet.getRange(low + 1, 1).setValue(role);
-    sheet.getRange(low + 1, 2).setValue(message);
-  }
+// class SpreadsheetAppController {
+//   public static addLog(role:string , message: string) {
+//     const spreadSheet = SpreadsheetApp.openByUrl(TALK_LOG_SHEET_URL);
+//     const sheet = spreadSheet.getSheetByName("Sheet1");
+//     if(sheet === null) {
+//       console.log("シートが見つかりませんでした。");
+//       return;
+//     }
+//     const low = sheet.getLastRow();
+//     sheet.getRange(low + 1, 1).setValue(role);
+//     sheet.getRange(low + 1, 2).setValue(message);
+//   }
 
-  public static getHistories(): SpreadsheetAppHistory[] {
-    const histories = [];
-    const examplesSheet = SpreadsheetApp.openByUrl(TALK_LOG_SHEET_URL).getSheetByName("examples");
-    if (examplesSheet === null) {
-      console.log("シートが見つかりませんでした。");
-      return [];
-    }
-    for (let n = 1;;n++) {
-      const userText = examplesSheet.getRange(n, 1).getValue();
-      const assistantText = examplesSheet.getRange(n, 2).getValue();
-      const isTextAvailable = (text: any) => typeof text === "string" && text.trim() !== "";
-      if (!isTextAvailable(userText) || !isTextAvailable(assistantText)) {
-        break;
-      }
-      histories.push({ "user": userText, "assistant": assistantText });
-    }
-    return histories;
-  }
-}
+//   public static getHistories(): SpreadsheetAppHistory[] {
+//     const histories = [];
+//     const examplesSheet = SpreadsheetApp.openByUrl(TALK_LOG_SHEET_URL).getSheetByName("examples");
+//     if (examplesSheet === null) {
+//       console.log("シートが見つかりませんでした。");
+//       return [];
+//     }
+//     for (let n = 1;;n++) {
+//       const userText = examplesSheet.getRange(n, 1).getValue();
+//       const assistantText = examplesSheet.getRange(n, 2).getValue();
+//       const isTextAvailable = (text: any) => typeof text === "string" && text.trim() !== "";
+//       if (!isTextAvailable(userText) || !isTextAvailable(assistantText)) {
+//         break;
+//       }
+//       histories.push({ "user": userText, "assistant": assistantText });
+//     }
+//     return histories;
+//   }
+// }
 
 class UserStateDatabase {
   private static cache = CacheService.getScriptCache();
@@ -322,25 +291,3 @@ class ChatGPTHandler {
     return response.choices[0].message.content;
   }
 }
-
-
-
-
-export const lambdaHandler = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
-    try {
-        return {
-            statusCode: 200,
-            body: JSON.stringify({
-                message: 'hello world',
-            }),
-        };
-    } catch (err) {
-        console.log(err);
-        return {
-            statusCode: 500,
-            body: JSON.stringify({
-                message: 'some error happened',
-            }),
-        };
-    }
-};
