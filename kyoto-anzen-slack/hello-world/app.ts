@@ -1,5 +1,5 @@
 import { APIGatewayEventRequestContext, APIGatewayProxyCallback, APIGatewayProxyEvent, APIGatewayProxyResult, Context, Handler } from 'aws-lambda';
-import https from 'https';
+import axios from 'axios';
 
 const SLACKBOT_VERIFICATION_TOKEN = process.env["SLACKBOT_VERIFICATION_TOKEN"] || "";
 const SLACKBOT_AUTH_TOKEN = process.env["SLACKBOT_AUTH_TOKEN"] || "";
@@ -122,12 +122,12 @@ export const lambdaHandler: Handler = async (event: APIGatewayProxyEvent, contex
     
     try {
       // 応答メッセージを取得する
-      const assistantText = kyotoTeacher.teach(userInputText);
+      const assistantText = await kyotoTeacher.teach(userInputText);
       // 応答メッセージが存在しない場合、処理を終了する
       if (!assistantText) return;
 
       // Slackに応答メッセージを投稿する
-      slackController.sendMessage(assistantText, "in_channel");
+      await slackController.sendMessage(assistantText, "in_channel");
       return;
     } catch (e: any) {
       console.error(e?.stack, "応答エラーが発生");
@@ -157,11 +157,11 @@ class Teacher {
     this.avatorUrl = avatorUrl;
   }
 
-  public teach(message: string): string {
+  public async teach(message: string): Promise<string> {
     // const histories = SpreadsheetAppController.getHistories();
     //const prompt = ChatGPTHandler.generateFullPrompt(this.prompt, histories, message);
     const prompt = ChatGPTHandler.generateFullPrompt(this.prompt, [], message);
-    return ChatGPTHandler.getAnswer(prompt);
+    return await ChatGPTHandler.getAnswer(prompt);
   }
 }
 
@@ -222,20 +222,17 @@ class SlackController {
     this.responseUrl = responseUrl;
   }
 
-  public sendMessage(text: string, visibility: "ephemeral" | "in_channel") {
+  public async sendMessage(text: string, visibility: "ephemeral" | "in_channel") {
     const payload = {
       "response_type": visibility,
       "text": text,
     };
 
-    const request = https.request(this.responseUrl, {
-      method: "POST",
+    const res = await axios.post(this.responseUrl, payload, {
       headers: {
         "Content-Type": "application/json",
       }
     });
-    request.write(JSON.stringify(payload));
-    request.end();
   }
 }
 
@@ -268,33 +265,28 @@ class ChatGPTHandler {
     return prompt;
   }
 
-  public static getAnswer(fullPrompt: ChatGPTCoversationLog[]) {
-    //OpenAIのAPIリクエストに必要なヘッダー情報を設定
-    const headers = {
-      Authorization: "Bearer " + OPENAI_APIKEY,
-      "Content-type": "application/json",
-    };
+  public static async getAnswer(fullPrompt: ChatGPTCoversationLog[]) {
     //ChatGPTモデルやトークン上限、プロンプトをオプションに設定
-    const options: GoogleAppsScript.URL_Fetch.URLFetchRequestOptions = {
-      muteHttpExceptions: true,
-      headers: headers,
-      method: "post",
-      payload: JSON.stringify({
-        model: "gpt-4-turbo",
-        messages: fullPrompt,
-        temperature: 0.5,
-        max_tokens: 256,
-        top_p: 1,
-        frequency_penalty: 0,
-        presence_penalty: 0
-      }),
+    const payload = {
+      model: "gpt-4-turbo",
+      messages: fullPrompt,
+      temperature: 0.5,
+      max_tokens: 256,
+      top_p: 1,
+      frequency_penalty: 0,
+      presence_penalty: 0,
     };
-    //OpenAIのChatGPTにAPIリクエストを送り、結果を変数に格納
-    const response = JSON.parse(
-      UrlFetchApp.fetch(OPENAI_COMPLETIONS_URL, options).getContentText()
-    );
+
+    const res = await axios.post(OPENAI_COMPLETIONS_URL, payload, {
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${OPENAI_APIKEY}`,
+      },
+    });
+
+
     //ChatGPTのAPIレスポンスをログ出力
-    console.log(response.choices[0].message.content);
-    return response.choices[0].message.content;
+    console.log(res.data?.choices[0]?.message?.content);
+    return res.data?.choices[0]?.message?.content || "";
   }
 }
