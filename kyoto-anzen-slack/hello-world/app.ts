@@ -99,20 +99,22 @@ export const lambdaHandler: Handler = async (event: APIGatewayProxyEvent, contex
     const userInputText = reqDict.get("text") || "";
     console.log(userInputText);
 
-    // userIDより前回ステートを参照して、使用するBOTを選択
-    const userState = UserStateDatabase.getCache(userId);
+    // TODO: userIDより前回ステートを参照して、使用するBOTを選択
+    // const userState = UserStateDatabase.getCache(userId);
+    const userState = (Math.random() > 0.5) ? MAIKO_KEYWORD : PRINCESS_KEYWORD;
+
     const kyotoTeacher = (userState !== PRINCESS_KEYWORD) ? new Teacher(KYOTO_PROMPT, "まいこはん", AVATOR_URL_KYOTO) : new Teacher(PRINCESS_PROMPT, "プリンセス", AVATOR_URL_PRINCESS);
 
     const slackController = new SlackController(responseUrl);
 
     if (userInputText === MAIKO_KEYWORD) {
-      UserStateDatabase.setCache(userId, MAIKO_KEYWORD);
+      // UserStateDatabase.setCache(userId, MAIKO_KEYWORD);
       slackController.sendMessage("[心理的安全性サポーター変更] 「京都のまいこはん」に切り替えました。", "ephemeral");
       return;
     }
 
     if (userInputText === PRINCESS_KEYWORD) {
-      UserStateDatabase.setCache(userId, PRINCESS_KEYWORD);
+      // UserStateDatabase.setCache(userId, PRINCESS_KEYWORD);
       slackController.sendMessage("[心理的安全性サポーター変更] 「育ちの良いお嬢様」に切り替えました。", "ephemeral");
       return;
     }
@@ -199,17 +201,17 @@ type SpreadsheetAppHistory = {
 //   }
 // }
 
-class UserStateDatabase {
-  private static cache = CacheService.getScriptCache();
+// class UserStateDatabase {
+//   private static cache = CacheService.getScriptCache();
 
-  public static setCache(key: string, value: string) {
-    this.cache.put(key, value, 21600);
-  }
+//   public static setCache(key: string, value: string) {
+//     this.cache.put(key, value, 21600);
+//   }
 
-  public static getCache(key: string): string {
-    return this.cache.get(key) || MAIKO_KEYWORD;
-  }
-}
+//   public static getCache(key: string): string {
+//     return this.cache.get(key) || MAIKO_KEYWORD;
+//   }
+// }
 
 class SlackController {
   private readonly responseUrl: string;
