@@ -1,4 +1,5 @@
 import { APIGatewayEventRequestContext, APIGatewayProxyCallback, APIGatewayProxyEvent, APIGatewayProxyResult, Context, Handler } from 'aws-lambda';
+import https from 'https';
 
 const SLACKBOT_VERIFICATION_TOKEN = process.env["SLACKBOT_VERIFICATION_TOKEN"] || "";
 const SLACKBOT_AUTH_TOKEN = process.env["SLACKBOT_AUTH_TOKEN"] || "";
@@ -158,7 +159,8 @@ class Teacher {
 
   public teach(message: string): string {
     // const histories = SpreadsheetAppController.getHistories();
-    const prompt = ChatGPTHandler.generateFullPrompt(this.prompt, histories, message);
+    //const prompt = ChatGPTHandler.generateFullPrompt(this.prompt, histories, message);
+    const prompt = ChatGPTHandler.generateFullPrompt(this.prompt, [], message);
     return ChatGPTHandler.getAnswer(prompt);
   }
 }
@@ -225,12 +227,15 @@ class SlackController {
       "response_type": visibility,
       "text": text,
     };
-    const options: GoogleAppsScript.URL_Fetch.URLFetchRequestOptions = {
-      method: "post",
-      contentType: "application/json",
-      payload: JSON.stringify(payload),
-    };
-    UrlFetchApp.fetch(this.responseUrl, options);
+
+    const request = https.request(this.responseUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      }
+    });
+    request.write(JSON.stringify(payload));
+    request.end();
   }
 }
 
