@@ -141,7 +141,9 @@ class TriggerProxy {
       method: "post",
       contentType: "application/json",
       payload: queryString,
+      muteHttpExceptions: true,
     };
+    // Todo: 非同期処理追加
     UrlFetchApp.fetch(`${selfUrl}?${this.RES_TYPE_PARAM}=${this.RES_TYPE_KEY_SELF}`, options);
   }
   public static checkCallType(e: GoogleAppsScript.Events.DoPost): "self" | "slack" {
