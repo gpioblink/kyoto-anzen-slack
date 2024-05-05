@@ -199,7 +199,7 @@ class SpreadsheetAppController {
   }
 
   public static getHistories(): SpreadsheetAppHistory[] {
-    const histories = [];
+    const histories: {user:string, assistant:string}[] = [];
     const examplesSheet = SpreadsheetApp.openByUrl(TALK_LOG_SHEET_URL).getSheetByName("examples");
     if (examplesSheet === null) {
       console.log("シートが見つかりませんでした。");
