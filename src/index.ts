@@ -171,7 +171,8 @@ class QueryString {
     const splited = encodedText.split("&");
     const dict = new Map(splited.map(s => {
       const [k, v] = s.split("=");
-      return [decodeURIComponent(k), decodeURIComponent(v)]
+      // TODO: 変換が不完全な気がするので確認する。decodeURIComponentでデコードし、+をスペースに置換
+      return [decodeURIComponent(k), decodeURIComponent(v).replace(/\+/g," ")]
     }));
     return dict;
   }
