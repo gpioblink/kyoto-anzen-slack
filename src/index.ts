@@ -108,9 +108,9 @@ class Main {
       if (!assistantText) return ContentService.createTextOutput("OK");
 
       if(visibility === "public") {
-        slackController.sendMessage(`<@${userId}>の発言: 「${pureInput}」\n${kyotoTeacher.name}の表現:「${assistantText}」`, "in_channel", kyotoTeacher.avatorUrl);
+        slackController.sendMessage(`<@${userId}>の発言: 「${pureInput}」\n${kyotoTeacher.name}の表現:「${assistantText}」`, "in_channel", kyotoTeacher.avatorUrl, kyotoTeacher.name);
       } else {
-        slackController.sendMessage(assistantText, "in_channel", null);
+        slackController.sendMessage(assistantText, "in_channel");
       }
       return ContentService.createTextOutput("OK");
     } catch (e: any) {
@@ -241,13 +241,14 @@ class SlackController {
     this.responseUrl = responseUrl;
   }
 
-  public sendMessage(text: string, visibility: "ephemeral" | "in_channel", iconUrl: string | null) {
-    const payload: { response_type: "ephemeral" | "in_channel"; text: string; icon_url?: string} = {
+  public sendMessage(text: string, visibility: "ephemeral" | "in_channel", iconUrl: string | null = null, userName: string | null = null) {
+    const payload: { response_type: "ephemeral" | "in_channel"; text: string; icon_url?: string; username?: string;} = {
       "response_type": visibility,
       "text": text,
     };
-    if(iconUrl) {
+    if(iconUrl && userName) {
       payload["icon_url"] = iconUrl;
+      payload["username"] = userName;
     }
     const options: GoogleAppsScript.URL_Fetch.URLFetchRequestOptions = {
       method: "post",
