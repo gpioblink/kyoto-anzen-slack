@@ -10,8 +10,8 @@ const OPENAI_COMPLETIONS_URL = PropertiesService.getScriptProperties().getProper
 const AVATOR_URL_KYOTO = "https://github.com/gpioblink/anzen-kyoto/blob/logo/anzen-kyoto.jpeg?raw=true";
 const AVATOR_URL_PRINCESS = "https://github.com/gpioblink/anzen-kyoto/blob/logo/anzen-ojousama.jpeg?raw=true";
 
-const MAIKO_KEYWORD = "!use:maikosan";
-const PRINCESS_KEYWORD = "!use:princess";
+const MAIKO_KEYWORD = "maiko";
+const PRINCESS_KEYWORD = "princess";
 
 
 const KYOTO_PROMPT = `
@@ -95,38 +95,53 @@ class Main {
     const userInputText = reqDict.get("text") || "";
     console.log(userInputText);
 
-    // userIDより前回ステートを参照して、使用するBOTを選択
-    const userState = UserStateDatabase.getCache(userId);
-    const kyotoTeacher = (userState !== PRINCESS_KEYWORD) ? new Teacher(KYOTO_PROMPT, "まいこはん", AVATOR_URL_KYOTO) : new Teacher(PRINCESS_PROMPT, "プリンセス", AVATOR_URL_PRINCESS);
+    const [pureInput, assistant, visibility] = this.parseInput(userInputText);
+
+    const kyotoTeacher = (assistant !== PRINCESS_KEYWORD) ? new Teacher(KYOTO_PROMPT, "まいこはん", AVATOR_URL_KYOTO) : new Teacher(PRINCESS_PROMPT, "プリンセス", AVATOR_URL_PRINCESS);
 
     const slackController = new SlackController(responseUrl);
-
-    if (userInputText === MAIKO_KEYWORD) {
-      UserStateDatabase.setCache(userId, MAIKO_KEYWORD);
-      slackController.sendMessage("[心理的安全性サポーター変更] 「京都のまいこはん」に切り替えました。", "ephemeral");
-      return ContentService.createTextOutput("OK");
-    }
-
-    if (userInputText === PRINCESS_KEYWORD) {
-      UserStateDatabase.setCache(userId, PRINCESS_KEYWORD);
-      slackController.sendMessage("[心理的安全性サポーター変更] 「育ちの良いお嬢様」に切り替えました。", "ephemeral");
-      return ContentService.createTextOutput("OK");
-    }
     
     try {
       // 応答メッセージを取得する
-      const assistantText = kyotoTeacher.teach(userInputText);
+      const assistantText = kyotoTeacher.teach(pureInput);
       // 応答メッセージが存在しない場合、OKを返して処理を終了する
       if (!assistantText) return ContentService.createTextOutput("OK");
 
-      // Slackに応答メッセージを投稿する
-      slackController.sendMessage(assistantText, "in_channel");
+      if(visibility === "public") {
+        slackController.sendMessage(`<@${userId}>の発言: 「${pureInput}」\n${kyotoTeacher.name}の表現:「${assistantText}」`, "in_channel", kyotoTeacher.avatorUrl);
+      } else {
+        slackController.sendMessage(assistantText, "in_channel", null);
+      }
       return ContentService.createTextOutput("OK");
     } catch (e: any) {
       console.error(e?.stack, "応答エラーが発生");
       return ContentService.createTextOutput("NG");
     }
 
+  }
+
+  private static parseInput(userInputText: string): [string, "maiko" | "princess", "public" | "hidden"] {
+    const pureInput = [];
+    let assistant: "maiko" | "princess" = "maiko";
+    let visibility: "public" | "hidden" = "public";
+
+    const flagments = userInputText.split(" ");
+    for(const flagment of flagments) {
+      switch(flagment) {
+        case MAIKO_KEYWORD:
+        case PRINCESS_KEYWORD:
+          assistant = flagment;
+          break;
+        case "public":
+        case "hidden":
+          visibility = flagment;
+          break;
+        default:
+          pureInput.push(flagment);
+          break;
+      }
+    }
+    return [pureInput.join() || "", assistant, visibility] as const;
   }
 }
 
@@ -199,7 +214,7 @@ class SpreadsheetAppController {
   }
 
   public static getHistories(): SpreadsheetAppHistory[] {
-    const histories = [];
+    const histories: {user:string, assistant:string}[] = [];
     const examplesSheet = SpreadsheetApp.openByUrl(TALK_LOG_SHEET_URL).getSheetByName("examples");
     if (examplesSheet === null) {
       console.log("シートが見つかりませんでした。");
@@ -218,18 +233,6 @@ class SpreadsheetAppController {
   }
 }
 
-class UserStateDatabase {
-  private static cache = CacheService.getScriptCache();
-
-  public static setCache(key: string, value: string) {
-    this.cache.put(key, value, 21600);
-  }
-
-  public static getCache(key: string): string {
-    return this.cache.get(key) || MAIKO_KEYWORD;
-  }
-}
-
 class SlackController {
   private readonly responseUrl: string;
 
@@ -237,11 +240,14 @@ class SlackController {
     this.responseUrl = responseUrl;
   }
 
-  public sendMessage(text: string, visibility: "ephemeral" | "in_channel") {
-    const payload = {
+  public sendMessage(text: string, visibility: "ephemeral" | "in_channel", iconUrl: string | null) {
+    const payload: { response_type: "ephemeral" | "in_channel"; text: string; icon_url?: string} = {
       "response_type": visibility,
       "text": text,
     };
+    if(iconUrl) {
+      payload["icon_url"] = iconUrl;
+    }
     const options: GoogleAppsScript.URL_Fetch.URLFetchRequestOptions = {
       method: "post",
       contentType: "application/json",
