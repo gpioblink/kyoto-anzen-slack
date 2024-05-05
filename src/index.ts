@@ -65,13 +65,13 @@ const PRINCESS_PROMPT = `
 `
 
 function doPost(e: GoogleAppsScript.Events.DoPost): GoogleAppsScript.Content.TextOutput {
-  // 特定のkey,valueが存在する場合に自分自身での呼び出しと判定しメイン処理を行う
-  switch(TriggerProxy.checkCallType(e)) {
-    case "slack":
-      return Main.triggerAndTemporalResponseForSlack(e);
-    case "self":
-      return Main.respondToSlackFromLocalTrigger(e);
-  }
+  return Main.triggerAndTemporalResponseForSlack(e);
+}
+
+// このトリガーは自動で追加されないので「トリガー追加」から手動でトリガー設定する
+function sheetsOnChange(e: GoogleAppsScript.Events.SheetsOnChange) {
+  const queryString = SpreadSheetProxy.restore();
+  Main.respondToSlackFromLocalTrigger(queryString);
 }
 
 class Main {
@@ -82,12 +82,12 @@ class Main {
       throw new Error("invalid token.");
     }
 
-    TriggerProxy.call(e.postData.contents);
+    SpreadSheetProxy.call(e.postData.contents);
     return ContentService.createTextOutput("リクエストを受け付けました。処理完了までお待ちください。");
   }
 
-  public static respondToSlackFromLocalTrigger(e: GoogleAppsScript.Events.DoPost) {
-    const reqDict = QueryString.decodeToMap(e.postData.contents);
+  public static respondToSlackFromLocalTrigger(queryString: string) {
+    const reqDict = QueryString.decodeToMap(queryString);
 
     // ref: https://api.slack.com/interactivity/slash-commands#app_command_handling
     const userId = reqDict.get("user_id") || "";
@@ -130,24 +130,18 @@ class Main {
   }
 }
 
-class TriggerProxy {
-  static readonly RES_TYPE_PARAM = "kyoto-anzen";
-  static readonly RES_TYPE_KEY_SELF = "self";
-
+class SpreadSheetProxy {
+  // FIXME: おそらくトランザクションの問題が発生するので、タイムスタンプも記録＆セルを変えるなど良い方法を考える
+  // ref: https://zenn.dev/cahchachakari/articles/ae9de2b919a0e6#%5B%E5%AF%BE%E7%AD%96%E3%81%9D%E3%81%AE3%5D-(%E9%9D%9E%E5%90%8C%E6%9C%9F%E5%AE%9F%E8%A1%8C)%E3%82%B9%E3%83%97%E3%83%AC%E3%83%83%E3%83%89%E3%82%B7%E3%83%BC%E3%83%88%E6%9B%B4%E6%96%B0%E3%81%AE%E3%83%88%E3%83%AA%E3%82%AC%E3%83%BC%E3%82%92%E7%99%BA%E7%81%AB%E3%81%95%E3%81%9B%E3%82%8B
   public static call(queryString: string) {
-    const selfUrl = ScriptApp.getService().getUrl();
-
-    const options: GoogleAppsScript.URL_Fetch.URLFetchRequestOptions = {
-      method: "post",
-      contentType: "application/json",
-      payload: queryString,
-      muteHttpExceptions: true,
-    };
-    // Todo: 非同期処理追加
-    UrlFetchApp.fetch(`${selfUrl}?${this.RES_TYPE_PARAM}=${this.RES_TYPE_KEY_SELF}`, options);
+    const sheet = SpreadsheetApp.getActiveSheet();
+    sheet.getRange(1, 1).setValue(queryString);
   }
-  public static checkCallType(e: GoogleAppsScript.Events.DoPost): "self" | "slack" {
-    return (e.parameter[this.RES_TYPE_PARAM] === this.RES_TYPE_KEY_SELF) ? "self" : "slack";
+
+  public static restore(): string {
+    const sheet = SpreadsheetApp.getActiveSheet();
+    const queryString = sheet.getRange(1, 1).getValue();
+    return queryString;
   }
 }
 
